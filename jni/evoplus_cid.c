@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <sys/ioctl.h>
+#include <stdlib.h>
+#include <string.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 #include "mmc.h"
 
