@@ -11,6 +11,11 @@
 #define PROGRAM_CID_OPCODE 26
 #define SAMSUNG_VENDOR_OPCODE 62
 
+#define MMC_ERASE_GROUP_START 35
+#define MMC_ERASE_GROUP_END 36
+#define MMC_ERASE 38
+#define MMC_READ_SINGLE_BLOCK 17
+
 int mmc_movi_vendor_cmd(unsigned int arg, int fd) {
 	int ret = 0;
 	struct mmc_ioc_cmd idata = {0};
@@ -26,20 +31,72 @@ int mmc_movi_vendor_cmd(unsigned int arg, int fd) {
 	return ret;
 }
 
+int int_cmd(int fd, unsigned int opcode, unsigned int arg, unsigned int flags) {
+	int ret = 0;
+	struct mmc_ioc_cmd idata = {0};
+
+	idata.data_timeout_ns = 0x10000000;
+	idata.write_flag = 1;
+	idata.opcode = opcode;
+	idata.arg = arg;
+	idata.flags = flags;
+
+	ret = ioctl(fd, MMC_IOC_CMD, &idata);
+
+	return ret;
+}
+
+int mmc_movi_erase_cmd(int host, unsigned int arg1, unsigned int arg2)
+{
+	int err;
+	int resp;
+
+	err = int_cmd(host, MMC_ERASE_GROUP_START, arg1, MMC_RSP_R1 | MMC_CMD_AC);
+	printf("A%i", err);
+	if (err) return err;
+
+	err = int_cmd(host, MMC_ERASE_GROUP_END, arg2, MMC_RSP_R1 | MMC_CMD_AC);
+	printf("B%i", err);
+	if (err) return err;
+
+	err = int_cmd(host, MMC_ERASE, 0, MMC_RSP_R1B | MMC_CMD_AC);
+	printf("C%i", err);
+	// if (!err)
+	// 	do {
+	// 		err = mmc_send_cmd(host, MMC_SEND_STATUS,
+	// 			host->card->rca << 16,
+	// 			MMC_RSP_SPI_R2 | MMC_RSP_R1 | MMC_CMD_AC,
+	// 			&resp);
+	// 		if (err) {
+	// 			printk(KERN_ERR "CMD13(VC) failed\n");
+	// 			break;
+	// 			}
+	// 		/*wait until READY_FOR_DATA*/
+	// 		} while (!(resp & 1<<8));
+
+	return err;
+}
+
 int cid_backdoor(int fd) {
 	int ret;
+	char result;
 
 	ret = mmc_movi_vendor_cmd(0xEFAC62EC, fd);
 	if (ret) {
 		printf("Failed to enter vendor mode. Genuine Samsung Evo Plus?\n");
 	} else {
-		ret = mmc_movi_vendor_cmd(0xEF50, fd);
+		ret = mmc_movi_vendor_cmd(0x10210002, fd);
 		if (ret) {
-			printf("Unlock command failed.\n");
+			printf("Failed to enter vendor mode (2/2).\n");
 		} else {
-			ret = mmc_movi_vendor_cmd(0x00DECCEE, fd);
+			ret = mmc_movi_vendor_cmd(0xEF50, fd);
 			if (ret) {
-				printf("Failed to exit vendor mode.\n");
+				printf("Unlock command failed.\n");
+			} else {
+				ret = mmc_movi_vendor_cmd(0x00DECCEE, fd);
+				if (ret) {
+					printf("Failed to exit vendor mode.\n");
+				}
 			}
 		}
 	}
@@ -117,6 +174,24 @@ int parse_serial(const char *str) {
 	return (int)val;
 }
 
+
+// int read(int fd) {
+// 	unsigned int arg = 0;
+// 	unsigned int blocks = 1;
+// 	char ret;
+
+// 	struct mmc_ioc_cmd idata = {0};
+
+// 	idata.data_timeout_ns = 0x10000000;
+// 	cmd.opcode = MMC_READ_SINGLE_BLOCK;
+// 	cmd.arg = arg;
+// 	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
+
+// 	// ret = ioctl(fd, MMC_IOC_CMD, &idata);
+
+// 	return ret;
+// }
+
 void main(int argc, const char **argv) {
 	int fd, ret, i, len;
 	unsigned char cid[CID_SIZE] = {0};
@@ -170,6 +245,16 @@ void main(int argc, const char **argv) {
 	// unlock card
 	//ret = 0;
 	ret = cid_backdoor(fd);
+	if (!ret) {
+			int a = mmc_movi_erase_cmd(fd, 0, 1);
+
+			if (a) {
+				printf("ERR ERASE\n");
+			} else {
+				printf("reading data... \n");
+			}
+
+	}
 	if (!ret){
 		// write new cid
 		printf("Writing new CID: ");
@@ -182,4 +267,3 @@ void main(int argc, const char **argv) {
 	close(fd);
 
 }
-
